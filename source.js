@@ -66,30 +66,75 @@ const onClose = () => {
 };
 
 class IoTStream extends Duplex {
-  constructor () {
-    super()
+  constructor (options) {
+    super(options)
+    // Should probably not use globals
+
+    // For writing
     this.sequence = new Uint32Array(1)
     this.sequence[0] = 0
-    // Should probably not use globals
+
+    // For reading
+    this.buffering = true
+    this.readBuffer = {}
+    this.pushedSeq = 0
+    this.maxQueuedSeq = 0
   }
 
   _write (chunk, encoding, cb) {
     const message = chunk
-    console.log('Jim sent', this.sequence[0], typeof message,
-      message.length, message)
+    // console.log('Jim sent', this.sequence[0], typeof message,
+    //   message.length, message)
     this.sequence[0]++;
     const seqMessage = Buffer.concat([
       Buffer.from(this.sequence.buffer),
       message
     ])
-    console.log('Jim sent2', seqMessage)
+    // console.log('Jim sent2', seqMessage)
     client.publish('/serverless/from-src', seqMessage, cb)
   }
 
   _read (size) {
-    console.log('Jim _read', size, readBuffer.length)
-    buffering = false
     // Do nothing. Use .push() instead
+    // console.log('Jim _read', size, Object.keys(this.readBuffer).length)
+    this.buffering = false
+    this.processQueue()
+  }
+
+  ingest (seqMessage) {
+    const seq = seqMessage.readUInt32LE(0) // Is it always LE?
+    const message = seqMessage.slice(4)
+    // console.log('Jim queued', seq, message)
+    this.readBuffer[seq] = message
+    this.maxQueuedSeq = Math.max(this.maxQueuedSeq, seq)
+    this.processQueue()
+  }
+
+  processQueue () {
+    // console.log('start processQueue', this.pushedSeq, this.maxQueuedSeq, this.processing)
+    if (this.processing) return
+    this.processing = true
+    if (this.buffering) return
+    while (this.pushedSeq < this.maxQueuedSeq) {
+      const nextSeq = this.pushedSeq + 1
+      const message = this.readBuffer[nextSeq]
+      // console.log('Jim seq message', nextSeq, message, this.readBuffer)
+      if (!message) {
+        this.processing = false
+        return
+      }
+      const pushed = this.push(message)
+      delete this.readBuffer[nextSeq]
+      this.pushedSeq = nextSeq
+      // console.log('Jim pushed', nextSeq, this.maxQueuedSeq, pushed,
+      //  this._readableState.flowing)
+      if (!pushed) {
+        this.buffering = true
+        this.processing = false
+        return
+      }
+    }
+    this.processing = false
   }
 }
 
@@ -135,21 +180,13 @@ function run () {
       const stream = new IoTStream()
       client.on('message', (topic, seqMessage) => {
         if (topic !== '/serverless/from-dest') return
-        console.log('Jim received', topic, typeof seqMessage,
-          seqMessage.length, seqMessage)
-        if (!buffering) {
-          /*
-          const pushed = stream.push(seqMessage)
-          // stream.resume()
-          console.log('Jim pushed', pushed, stream._readableState.flowing)
-          if (!pushed) {
-            buffering = true
-          }
-          */
-        } else {
-          readBuffer.push(seqMessage)
-        }
+        // console.log('Jim received', topic, typeof seqMessage,
+        //   seqMessage.length, seqMessage)
+        stream.ingest(seqMessage)
       })
+      stream.on('end', () => console.log('end'))
+      stream.on('finish', () => console.log('finish'))
+      stream.on('error', err => console.log('error', err))
       // console.log('Press a key')
       // process.stdin.once('data', function () {
       setTimeout(() => {
@@ -157,13 +194,13 @@ function run () {
         pump(
           stream,
 					through2(function (chunk, enc, cb) {
-						console.log('From dest', typeof chunk, chunk.length, chunk)
+						console.log('s <-- d', chunk)
 						this.push(chunk)
 						cb()
 					}),
           dat.archive.replicate({live: true, encrypt: false}),
 					through2(function (chunk, enc, cb) {
-						console.log('From src', typeof chunk, chunk.length, chunk)
+						console.log('s --> d', chunk)
 						this.push(chunk)
 						cb()
 					}),

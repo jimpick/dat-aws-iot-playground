@@ -66,6 +66,12 @@ class IoTStream extends Duplex {
   constructor (options) {
     super(options)
     // Should probably not use globals
+
+    // For writing
+    this.sequence = new Uint32Array(1)
+    this.sequence[0] = 0
+
+    // For reading
     this.buffering = true
     this.readBuffer = {}
     this.pushedSeq = 0
@@ -74,22 +80,20 @@ class IoTStream extends Duplex {
 
   _write (chunk, encoding, cb) {
     const message = chunk
-    console.log('Jim sent', typeof message, message.length, message)
-    /*
-    client.publish('/serverless/from-dest', message, err => {
-      if (err) {
-        console.log('Jim cb', err)
-        cb(err)
-      {
-      cb()
-    })
-    */
-    cb()
+    // console.log('Jim sent', this.sequence[0], typeof message,
+    //   message.length, message)
+    this.sequence[0]++;
+    const seqMessage = Buffer.concat([
+      Buffer.from(this.sequence.buffer),
+      message
+    ])
+    // console.log('Jim sent2', seqMessage)
+    client.publish('/serverless/from-dest', seqMessage, cb)
   }
 
   _read (size) {
     // Do nothing. Use .push() instead
-    console.log('Jim _read', size, Object.keys(this.readBuffer).length)
+    // console.log('Jim _read', size, Object.keys(this.readBuffer).length)
     this.buffering = false
     this.processQueue()
   }
@@ -97,35 +101,47 @@ class IoTStream extends Duplex {
   ingest (seqMessage) {
     const seq = seqMessage.readUInt32LE(0) // Is it always LE?
     const message = seqMessage.slice(4)
-    console.log('Jim queued', seq, message)
+    // console.log('Jim queued', seq, message)
     this.readBuffer[seq] = message
     this.maxQueuedSeq = Math.max(this.maxQueuedSeq, seq)
     this.processQueue()
   }
 
   processQueue () {
-    if (this.buffering) return
+    // console.log('start processQueue', this.pushedSeq, this.maxQueuedSeq, this.processing)
+    if (this.processing) return
+    this.processing = true
+    if (this.buffering) {
+      this.processing = false
+      return
+    }
     while (this.pushedSeq < this.maxQueuedSeq) {
       const nextSeq = this.pushedSeq + 1
       const message = this.readBuffer[nextSeq]
-      if (!message) return
+      // console.log('Jim seq message', nextSeq, message, this.readBuffer)
+      if (!message) {
+        this.processing = false
+        return
+      }
       const pushed = this.push(message)
       delete this.readBuffer[nextSeq]
       this.pushedSeq = nextSeq
-      console.log('Jim pushed', nextSeq, this.maxQueuedSeq, pushed,
-        this._readableState.flowing)
+      // console.log('Jim pushed', nextSeq, this.maxQueuedSeq, pushed,
+      //  this._readableState.flowing)
       if (!pushed) {
         this.buffering = true
+        this.processing = false
         return
       }
     }
+    this.processing = false
   }
 }
 
 const oldEnd = IoTStream.prototype.end
 IoTStream.prototype.end = function () {
   // console.trace('Jim end', oldEnd)
-  console.log('Jim end')
+  // console.log('Jim end')
   oldEnd.apply(this, Array.from(arguments))
 }
 
@@ -168,8 +184,8 @@ function run () {
       const stream = new IoTStream()
       client.on('message', (topic, seqMessage) => {
         if (topic !== '/serverless/from-src') return
-        console.log('Jim received', topic, typeof seqMessage,
-          seqMessage.length, seqMessage)
+        // console.log('Jim received', topic, typeof seqMessage,
+        //  seqMessage.length, seqMessage)
         stream.ingest(seqMessage)
       })
       stream.on('end', () => console.log('end'))
@@ -179,27 +195,24 @@ function run () {
       // process.stdin.once('data', function () {
       setTimeout(() => {
         console.log('Pump')
-        /*
         const replicate = dat.archive.replicate({live: true, encrypt: false})
         replicate.on('end', () => console.log('replicate end'))
         replicate.on('finish', () => console.log('replicate finish'))
         replicate.on('error', err => console.log('replicate error', err))
-        */
         pump(
           stream,
 					through2(function (chunk, enc, cb) {
-						console.log('From src', typeof chunk, chunk.length, chunk)
+						console.log('s --> d', chunk)
 						this.push(chunk)
 						cb()
-					})
-          /* replicate,
+					}),
+          replicate,
 					through2(function (chunk, enc, cb) {
-						console.log('From dest', typeof chunk, chunk.length, chunk)
+						console.log('s <-- d', chunk)
 						this.push(chunk)
 						cb()
 					}),
           stream
-          */
         )
         dat.archive.on('update', () => {
           console.log('update', dat.archive.version)
