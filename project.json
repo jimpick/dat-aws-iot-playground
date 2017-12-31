@@ -1,0 +1,8 @@
+{
+  "name": "dat-lambda-test",
+  "description": "Can we download a file from a Dat archive via Lambda?",
+  "memory": 128,
+  "timeout": 5,
+  "role": "arn:aws:iam::013540632128:role/dat-lambda-test_lambda_function",
+  "environment": {}
+}
