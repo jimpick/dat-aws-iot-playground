@@ -97,6 +97,7 @@ function run () {
     const opts = {
       key: '72671c5004d3b956791b6ffca7f05025d62309feaf99cde04c6f434189694291',
       sparse: true,
+      sparseMetadata: true,
       indexed: false
     }
     Dat('./local-copy', opts, function (err, dat) {
@@ -130,6 +131,7 @@ function run () {
 						cb()
 					}),
           dat.archive.replicate({live: true, encrypt: false}),
+          // dat.archive.replicate({encrypt: false}),
 					through2(function (chunk, enc, cb) {
 						// console.log('s --> d', chunk)
 						this.push(chunk)
@@ -143,7 +145,7 @@ function run () {
       dat.archive.on('ready', () => console.log('ready'))
       setTimeout(() => {
         console.log('Updating metadata')
-        // dat.archive.metadata.update(() => {
+        dat.archive.metadata.update(() => {
           console.log('Updated', dat.archive.version)
           dat.archive.readdir('/', (err, files) => {
             if (err) {
@@ -160,7 +162,7 @@ function run () {
             console.log('Downloaded')
             process.exit(0)
           })
-        // })
+        })
       }, 7000)
     })
 

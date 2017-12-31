@@ -129,10 +129,15 @@ function run () {
       // process.stdin.once('data', function () {
       setTimeout(() => {
         console.log('Pump')
-        const replicate = httpDrive.replicate({live: true, encrypt: false})
+        // const replicate = httpDrive.replicate({live: true, encrypt: false})
+        const replicate = httpDrive.replicate({encrypt: false})
         replicate.on('end', () => console.log('replicate end'))
         replicate.on('finish', () => console.log('replicate finish'))
-        replicate.on('error', err => console.log('replicate error', err))
+        replicate.on('error', err => {
+          console.log('replicate error', err)
+          // Why does this happen?
+          process.exit(0)
+        })
         pump(
           stream,
 					through2(function (chunk, enc, cb) {
