@@ -16,6 +16,17 @@ const iotEndpoint = 'a1i7z9mmi9v21.iot.us-east-1.amazonaws.com';
 
 let client, iotTopic;
 
+const protocolTypes = {
+  2: 'info',
+  3: 'have',
+  4: 'unhave',
+  5: 'want',
+  6: 'unwant',
+  7: 'request',
+  8: 'cancel',
+  9: 'data'
+}
+
 const IoT = {
   connect: (topic, iotEndpoint, region, accessKey, secretKey, sessionToken) => {
 
@@ -123,6 +134,49 @@ function run () {
       // process.stdin.once('data', function () {
       setTimeout(() => {
         console.log('Pump')
+
+        const replicate = dat.archive.replicate({live: true, encrypt: false})
+
+        replicate.on('handshake', () => {
+          console.log(
+            'protocol: handshake',
+            replicate.remoteId,
+            replicate.remoteLive,
+            replicate.remoteUserData
+          )
+        })
+        replicate.on('feed', (discoveryKey) => {
+          let feedName = 'unknown'
+          if (
+            discoveryKey.toString('hex') ===
+            dat.archive.metadata.discoveryKey.toString('hex')
+          ) {
+            feedName = 'metadata'
+          }
+          if (
+            dat.archive.content &&
+            discoveryKey.toString('hex') ===
+            dat.archive.content.discoveryKey.toString('hex')
+          ) { 
+            feedName = 'content'
+          }
+          console.log('protocol: feed', feedName)
+          // console.log('feeds:', replicate.feeds)
+          replicate.feeds.forEach(feed => {
+            if (
+              discoveryKey.toString('hex') !==
+              feed.discoveryKey.toString('hex')
+            ) return
+            // console.log('Feed matched', feedName, feed)
+            const _emit = Object.getPrototypeOf(feed)._emit
+            feed._emit = function (type, message) {
+              // console.log('protocol:', feedName, type,
+              //   protocolTypes[type], message)
+              _emit.call(this, type, message)
+            }
+          })
+        })
+
         pump(
           stream,
 					through2(function (chunk, enc, cb) {
@@ -130,7 +184,7 @@ function run () {
 						this.push(chunk)
 						cb()
 					}),
-          dat.archive.replicate({live: true, encrypt: false}),
+          replicate,
           // dat.archive.replicate({encrypt: false}),
 					through2(function (chunk, enc, cb) {
 						// console.log('s --> d', chunk)

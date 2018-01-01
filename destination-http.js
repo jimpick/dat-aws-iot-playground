@@ -25,6 +25,17 @@ var storage = datHttp('https://s3-us-west-2.amazonaws.com/dat-backups/rotonde-ji
 
 let client, iotTopic;
 
+const protocolTypes = {
+  2: 'info',
+  3: 'have',
+  4: 'unhave',
+  5: 'want',
+  6: 'unwant',
+  7: 'request',
+  8: 'cancel',
+  9: 'data'
+}
+
 const IoT = {
   connect: (topic, iotEndpoint, region, accessKey, secretKey, sessionToken) => {
 
@@ -138,6 +149,46 @@ function run () {
           // Why does this happen?
           process.exit(0)
         })
+
+        replicate.on('handshake', () => {
+          console.log(
+            'protocol: handshake',
+            replicate.remoteId,
+            replicate.remoteLive,
+            replicate.remoteUserData
+          )
+        })
+        replicate.on('feed', (discoveryKey) => {
+          let feedName = 'unknown'
+          if (
+            discoveryKey.toString('hex') ===
+            httpDrive.metadata.discoveryKey.toString('hex')
+          ) {
+            feedName = 'metadata'
+          }
+          if (
+            discoveryKey.toString('hex') ===
+            httpDrive.content.discoveryKey.toString('hex')
+          ) { 
+            feedName = 'content'
+          }
+          console.log('protocol: feed', feedName)
+          // console.log('feeds:', replicate.feeds)
+          replicate.feeds.forEach(feed => {
+            if (
+              discoveryKey.toString('hex') !==
+              feed.discoveryKey.toString('hex')
+            ) return
+            // console.log('Feed matched', feedName, feed)
+            const _emit = Object.getPrototypeOf(feed)._emit
+            feed._emit = function (type, message) {
+              console.log('protocol:', feedName, type,
+                protocolTypes[type], message)
+              _emit.call(this, type, message)
+            }
+          })
+        })
+
         pump(
           stream,
 					through2(function (chunk, enc, cb) {
