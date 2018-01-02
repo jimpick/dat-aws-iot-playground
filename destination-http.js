@@ -77,8 +77,8 @@ const onError = () => {};
 const onReconnect = () => {};
 const onOffline = () => {};
 
-const onClose = () => {
-    console.log('Connection failed');
+const onClose = (err) => {
+  console.log('Connection closed');
 };
 
 function run () {
@@ -113,7 +113,10 @@ function run () {
 
 		const httpDrive = hyperdrive(storage, key, {
 			latest: true,
-			live: false
+			live: false,
+      sparse: true,
+      sparseMetadata: true,
+      // indexing: false
 		})
 		httpDrive.on('ready', () => {
 			console.log('Jim ready', httpDrive.version)
@@ -138,10 +141,15 @@ function run () {
       stream.on('error', err => console.log('error', err))
       // console.log('Press a key')
       // process.stdin.once('data', function () {
+      console.log('Sleeping 5 seconds')
       setTimeout(() => {
+        console.log('Version', httpDrive.version)
+        console.log('Metadata length', httpDrive.metadata.length)
+        console.log('Content length', httpDrive.content.length)
+
         console.log('Pump')
         // const replicate = httpDrive.replicate({live: true, encrypt: false})
-        const replicate = httpDrive.replicate({encrypt: false})
+        const replicate = httpDrive.replicate({live: false, encrypt: false})
         replicate.on('end', () => console.log('replicate end'))
         replicate.on('finish', () => console.log('replicate finish'))
         replicate.on('error', err => {
@@ -180,28 +188,36 @@ function run () {
               feed.discoveryKey.toString('hex')
             ) return
             // console.log('Feed matched', feedName, feed)
+            feed.label = feedName
             const _emit = Object.getPrototypeOf(feed)._emit
             feed._emit = function (type, message) {
               console.log('protocol:', feedName, type,
                 protocolTypes[type], message)
               _emit.call(this, type, message)
+              if (
+                feedName === 'content' &&
+                type === 2 // Info
+              ) {
+                replicate.destroy()
+                httpDrive.close()
+              }
             }
           })
         })
 
         pump(
           stream,
-					through2(function (chunk, enc, cb) {
-						console.log('s --> d', chunk)
-						this.push(chunk)
-						cb()
-					}),
+          through2(function (chunk, enc, cb) {
+            console.log('s --> d', chunk)
+            this.push(chunk)
+            cb()
+          }),
           replicate,
-					through2(function (chunk, enc, cb) {
-						console.log('s <-- d', chunk)
-						this.push(chunk)
-						cb()
-					}),
+          through2(function (chunk, enc, cb) {
+            console.log('s <-- d', chunk)
+            this.push(chunk)
+            cb()
+          }),
           stream
         )
         httpDrive.on('update', () => {

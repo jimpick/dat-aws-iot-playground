@@ -3,6 +3,7 @@ const pump = require('pump')
 const through2 = require('through2')
 const port = process.env.PORT || 50000
 const IoTStream = require('./iot-stream')
+const ram = require('random-access-memory')
 
 const awsIot = require('aws-iot-device-sdk');
 
@@ -71,7 +72,7 @@ const onReconnect = () => {};
 const onOffline = () => {};
 
 const onClose = () => {
-    console.log('Connection failed');
+    console.log('AWS IoT connection closed');
 };
 
 function run () {
@@ -111,7 +112,8 @@ function run () {
       sparseMetadata: true,
       indexed: false
     }
-    Dat('./local-copy', opts, function (err, dat) {
+    // Dat('./local-copy', opts, function (err, dat) {
+    Dat(ram, opts, function (err, dat) {
       if (err) throw err
 
       console.log(`dat://${dat.key.toString('hex')}`)
@@ -170,8 +172,8 @@ function run () {
             // console.log('Feed matched', feedName, feed)
             const _emit = Object.getPrototypeOf(feed)._emit
             feed._emit = function (type, message) {
-              // console.log('protocol:', feedName, type,
-              //   protocolTypes[type], message)
+              console.log('protocol:', feedName, type,
+                protocolTypes[type], message)
               _emit.call(this, type, message)
             }
           })
@@ -193,31 +195,47 @@ function run () {
 					}),
           stream
         )
+
+        // dat.joinNetwork()
+        dat.archive.on('ready', () => console.log('ready'))
+        setTimeout(() => {
+          console.log('Updating metadata')
+          dat.archive.metadata.update(() => {
+            console.log('Updated', dat.archive.version)
+            dat.archive.readdir('/', (err, files) => {
+              if (err) {
+                console.error('readdir err', err)
+                return
+              }
+              console.log(files)
+              replicate.feeds.forEach(feed => {
+                feed.info({
+                  downloading: false,
+                  uploading: false
+                })
+              })
+              replicate.finalize()
+              // replicate.finalize()
+              // replicate.destroy()
+              // dat.close()
+              // replicate.finalize()
+              // console.log(replicate)
+              // process.exit(0)
+            })
+            /*
+            dat.archive.download('portal.json', (err) => {
+              if (err) {
+                console.error('download err', err)
+                return
+              }
+              console.log('Downloaded')
+              process.exit(0)
+            })
+            */
+          })
+        }, 3000)
       }, 5000)
 
-      // dat.joinNetwork()
-      dat.archive.on('ready', () => console.log('ready'))
-      setTimeout(() => {
-        console.log('Updating metadata')
-        dat.archive.metadata.update(() => {
-          console.log('Updated', dat.archive.version)
-          dat.archive.readdir('/', (err, files) => {
-            if (err) {
-              console.error('readdir err', err)
-              return
-            }
-            console.log(files)
-          })
-          dat.archive.download('portal.json', (err) => {
-            if (err) {
-              console.error('download err', err)
-              return
-            }
-            console.log('Downloaded')
-            process.exit(0)
-          })
-        })
-      }, 7000)
     })
 
   });

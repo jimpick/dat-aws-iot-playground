@@ -15,6 +15,10 @@ class IoTStream extends Duplex {
     this.readBuffer = {}
     this.pushedSeq = 0
     this.maxQueuedSeq = 0
+    this.on('finish', () => {
+      this.finished = true
+      this.client.end()
+    })
   }
 
   _write (chunk, encoding, cb) {
@@ -60,6 +64,10 @@ class IoTStream extends Duplex {
       const message = this.readBuffer[nextSeq]
       // console.log('Jim seq message', nextSeq, message, this.readBuffer)
       if (!message) {
+        this.processing = false
+        return
+      }
+      if (this.finished) {
         this.processing = false
         return
       }
