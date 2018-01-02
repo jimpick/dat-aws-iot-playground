@@ -172,8 +172,8 @@ function run () {
             // console.log('Feed matched', feedName, feed)
             const _emit = Object.getPrototypeOf(feed)._emit
             feed._emit = function (type, message) {
-              console.log('protocol:', feedName, type,
-                protocolTypes[type], message)
+              // console.log('protocol:', feedName, type,
+              //  protocolTypes[type], message)
               _emit.call(this, type, message)
             }
           })
@@ -197,24 +197,54 @@ function run () {
         )
 
         // dat.joinNetwork()
-        dat.archive.on('ready', () => console.log('ready'))
-        setTimeout(() => {
-          console.log('Updating metadata')
-          dat.archive.metadata.update(() => {
+        // dat.archive.on('ready', () => console.log('ready'))
+        dat.archive.metadata.on('ready', () => console.log('ready'))
+        dat.archive.metadata.on('append', () => {
+          console.log('append')
+        //setTimeout(() => {
+          console.log('Updating metadata', dat.archive.version)
+          console.log('metadata length', dat.archive.metadata.length)
+          // console.log('content length', dat.archive.content.length)
+          dat.archive.metadata.update(dat.archive.metadata.length, () => {
             console.log('Updated', dat.archive.version)
+            console.log('metadata length', dat.archive.metadata.length)
+            // console.log('content length', dat.archive.content.length)
+            /*
+            replicate.feeds.forEach(feed => {
+              feed.info({
+                downloading: false,
+                uploading: false
+              })
+            })
+            replicate.finalize()
+            */
             dat.archive.readdir('/', (err, files) => {
               if (err) {
                 console.error('readdir err', err)
+                finish()
                 return
               }
               console.log(files)
-              replicate.feeds.forEach(feed => {
-                feed.info({
-                  downloading: false,
-                  uploading: false
-                })
+              dat.archive.readFile('portal.json', (err, data) => {
+                if (err) {
+                  console.error('download err', err)
+                  finish()
+                  return
+                }
+                console.log('Downloaded')
+                console.log(data.toString())
+                // process.exit(0)
+                finish()
               })
-              replicate.finalize()
+              function finish () {
+                replicate.feeds.forEach(feed => {
+                  feed.info({
+                    downloading: false,
+                    uploading: false
+                  })
+                })
+                replicate.finalize()
+              }
               // replicate.finalize()
               // replicate.destroy()
               // dat.close()
@@ -222,18 +252,9 @@ function run () {
               // console.log(replicate)
               // process.exit(0)
             })
-            /*
-            dat.archive.download('portal.json', (err) => {
-              if (err) {
-                console.error('download err', err)
-                return
-              }
-              console.log('Downloaded')
-              process.exit(0)
-            })
-            */
           })
-        }, 3000)
+        //}, 5000)
+        })
       }, 5000)
 
     })

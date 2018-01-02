@@ -208,13 +208,13 @@ function run () {
         pump(
           stream,
           through2(function (chunk, enc, cb) {
-            console.log('s --> d', chunk)
+            // console.log('s --> d', chunk)
             this.push(chunk)
             cb()
           }),
           replicate,
           through2(function (chunk, enc, cb) {
-            console.log('s <-- d', chunk)
+            // console.log('s <-- d', chunk)
             this.push(chunk)
             cb()
           }),
